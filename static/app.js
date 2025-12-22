@@ -13,11 +13,17 @@ const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(page)
     }).then(r => r.json()),
-    deletePage: (id) => fetch(`/api/pages/${id}`, { method: 'DELETE' })
+    deletePage: (id) => fetch(`/api/pages/${id}`, { method: 'DELETE' }),
+    updatePage: (page) => fetch(`/api/pages/${page.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(page)
+    }).then(r => r.json())
 };
 
 // State
 let currentBookId = null;
+let editingPageId = null;
 let books = [];
 
 // DOM Elements
@@ -85,6 +91,9 @@ async function loadPages(bookId) {
             <h3 class="page-title">${p.name}</h3>
             <p class="page-content">${p.content}</p>
             <div class="page-actions">
+                <button class="btn btn-small" onclick="editPage(${p.id})">
+                    <ion-icon name="create"></ion-icon> Edit
+                </button>
                 <button class="btn btn-small danger" onclick="deletePage(${p.id})">
                     <ion-icon name="trash"></ion-icon> Delete
                 </button>
@@ -99,11 +108,38 @@ window.deletePage = async (id) => {
     loadPages(currentBookId);
 };
 
+window.editPage = async (id) => {
+    const pages = await api.getPages(currentBookId);
+    const page = pages.find(p => p.id === id);
+    if (!page) return;
+
+    editingPageId = id;
+
+    // Fill form
+    const form = pageForm;
+    form.querySelector('[name="name"]').value = page.name;
+    form.querySelector('[name="number"]').value = page.number;
+    form.querySelector('[name="content"]').value = page.content;
+
+    // Update modal title/button
+    pageModal.querySelector('.modal-header h3').textContent = 'Edit Page';
+    pageModal.querySelector('.modal-footer .btn.primary').textContent = 'Save Changes';
+
+    showModal(pageModal);
+};
+
 // Event Listeners
 function setupEventListeners() {
     // Buttons
     document.getElementById('addBookBtn').onclick = () => showModal(bookModal);
-    document.getElementById('addPageBtn').onclick = () => showModal(pageModal);
+    document.getElementById('addBookBtn').onclick = () => showModal(bookModal);
+    document.getElementById('addPageBtn').onclick = () => {
+        editingPageId = null;
+        pageForm.reset();
+        pageModal.querySelector('.modal-header h3').textContent = 'New Page';
+        pageModal.querySelector('.modal-footer .btn.primary').textContent = 'Add Page';
+        showModal(pageModal);
+    };
 
     document.getElementById('deleteBookBtn').onclick = async () => {
         if (!confirm('Delete this book and all its pages?')) return;
@@ -135,14 +171,22 @@ function setupEventListeners() {
     pageForm.onsubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(pageForm);
-        await api.addPage({
+        const data = {
             bookId: currentBookId,
             name: formData.get('name'),
             number: parseInt(formData.get('number')),
             content: formData.get('content')
-        });
+        };
+
+        if (editingPageId) {
+            await api.updatePage({ ...data, id: editingPageId });
+        } else {
+            await api.addPage(data);
+        }
+
         pageModal.classList.add('hidden');
         pageForm.reset();
+        editingPageId = null;
         loadPages(currentBookId);
     };
 

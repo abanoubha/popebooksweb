@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -238,14 +239,32 @@ func handlePageItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method == DELETE {
+	switch r.Method {
+	case DELETE:
 		_, err := db.Exec("DELETE FROM pages WHERE id = ?", idStr)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-	} else {
+
+	case "PUT":
+		var p Page
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Update page
+		_, err := db.Exec("UPDATE pages SET name = ?, number = ?, content = ? WHERE id = ?", p.Name, p.Number, p.Content, idStr)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Return updated page (or just OK)
+		p.ID, _ = strconv.Atoi(idStr)
+		json.NewEncoder(w).Encode(p)
+
+	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
