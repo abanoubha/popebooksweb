@@ -94,7 +94,6 @@ async function loadPages(bookId) {
             <div class="page-header">
                 <span class="page-number">PAGE ${p.number}</span>
             </div>
-            <h3 class="page-title">${p.name}</h3>
             <p class="page-content">${p.content}</p>
             <div class="page-actions">
                 <button class="btn btn-small" onclick="editPage(${p.id})">
@@ -123,7 +122,6 @@ window.editPage = async (id) => {
 
     // Fill form
     const form = pageForm;
-    form.querySelector('[name="name"]').value = page.name;
     form.querySelector('[name="number"]').value = page.number;
     form.querySelector('[name="content"]').value = page.content;
 
@@ -207,7 +205,6 @@ function setupEventListeners() {
         const formData = new FormData(pageForm);
         const data = {
             bookId: currentBookId,
-            name: formData.get('name'),
             number: parseInt(formData.get('number')),
             content: formData.get('content')
         };
