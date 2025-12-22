@@ -6,6 +6,11 @@ const api = {
         body: JSON.stringify({ name })
     }).then(r => r.json()),
     deleteBook: (id) => fetch(`/api/books/${id}`, { method: 'DELETE' }),
+    updateBook: (book) => fetch(`/api/books/${book.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(book)
+    }).then(r => r.json()),
 
     getPages: (bookId) => fetch(`/api/pages?bookId=${bookId}`).then(r => r.json()),
     addPage: (page) => fetch('/api/pages', {
@@ -24,6 +29,7 @@ const api = {
 // State
 let currentBookId = null;
 let editingPageId = null;
+let editingBookId = null;
 let books = [];
 
 // DOM Elements
@@ -131,8 +137,24 @@ window.editPage = async (id) => {
 // Event Listeners
 function setupEventListeners() {
     // Buttons
-    document.getElementById('addBookBtn').onclick = () => showModal(bookModal);
-    document.getElementById('addBookBtn').onclick = () => showModal(bookModal);
+    document.getElementById('addBookBtn').onclick = () => {
+        editingBookId = null;
+        bookForm.reset();
+        bookModal.querySelector('.modal-header h3').textContent = 'New Book';
+        bookModal.querySelector('.modal-footer .btn.primary').textContent = 'Create Book';
+        showModal(bookModal);
+    };
+
+    document.getElementById('editBookBtn').onclick = () => {
+        const book = books.find(b => b.id === currentBookId);
+        if (!book) return;
+        editingBookId = currentBookId;
+        bookForm.reset();
+        bookForm.querySelector('[name="name"]').value = book.name;
+        bookModal.querySelector('.modal-header h3').textContent = 'Edit Book';
+        bookModal.querySelector('.modal-footer .btn.primary').textContent = 'Save Changes';
+        showModal(bookModal);
+    };
     document.getElementById('addPageBtn').onclick = () => {
         editingPageId = null;
         pageForm.reset();
@@ -162,9 +184,21 @@ function setupEventListeners() {
     bookForm.onsubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(bookForm);
-        await api.addBook(formData.get('name'));
+        const name = formData.get('name');
+
+        if (editingBookId) {
+            await api.updateBook({ id: editingBookId, name });
+            // Update local state if needed
+            const book = books.find(b => b.id === editingBookId);
+            if (book) book.name = name;
+            currentBookTitle.textContent = name;
+        } else {
+            await api.addBook(name);
+        }
+
         bookModal.classList.add('hidden');
         bookForm.reset();
+        editingBookId = null;
         loadBooks();
     };
 

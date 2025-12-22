@@ -156,7 +156,8 @@ func handleBookItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method == DELETE {
+	switch r.Method {
+	case DELETE:
 		// First delete pages associated with book
 		_, err := db.Exec("DELETE FROM pages WHERE book_id = ?", idStr)
 		if err != nil {
@@ -170,7 +171,22 @@ func handleBookItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-	} else {
+
+	case "PUT":
+		var b Book
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		_, err := db.Exec("UPDATE books SET name = ? WHERE id = ?", b.Name, idStr)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		b.ID, _ = strconv.Atoi(idStr)
+		json.NewEncoder(w).Encode(b)
+
+	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }

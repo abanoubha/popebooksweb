@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,6 +13,7 @@
     <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
     <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
 </head>
+
 <body>
 
     <div class="app-container">
@@ -19,14 +21,14 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <div class="logo">
-                     <ion-icon name="library"></ion-icon>
-                     <span>PopeBooks</span>
+                    <ion-icon name="library"></ion-icon>
+                    <span>PopeBooks</span>
                 </div>
                 <button class="btn-icon primary" id="addBookBtn" title="Add Book">
                     <ion-icon name="add"></ion-icon>
                 </button>
             </div>
-            
+
             <div class="search-bar">
                 <ion-icon name="search-outline"></ion-icon>
                 <input type="text" id="bookSearch" placeholder="Search books...">
@@ -52,7 +54,10 @@
                         <span class="badge" id="pageCountBadge">0 Pages</span>
                     </div>
                     <div class="actions">
-                         <button class="btn danger" id="deleteBookBtn">
+                        <button class="btn" id="editBookBtn">
+                            <ion-icon name="create-outline"></ion-icon> Edit Book
+                        </button>
+                        <button class="btn danger" id="deleteBookBtn">
                             <ion-icon name="trash-outline"></ion-icon> Delete Book
                         </button>
                         <button class="btn primary" id="addPageBtn">
@@ -117,4 +122,5 @@
 
     <script src="app.js"></script>
 </body>
+
 </html>
