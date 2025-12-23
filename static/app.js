@@ -153,11 +153,15 @@ function setupEventListeners() {
         bookModal.querySelector('.modal-footer .btn.primary').textContent = 'Save Changes';
         showModal(bookModal);
     };
-    document.getElementById('addPageBtn').onclick = () => {
+    document.getElementById('addPageBtn').onclick = async () => {
         editingPageId = null;
         pageForm.reset();
         pageModal.querySelector('.modal-header h3').textContent = 'New Page';
         pageModal.querySelector('.modal-footer .btn.primary').textContent = 'Add Page';
+
+        const pages = await api.getPages(currentBookId);
+        pageModal.querySelector('input[name="number"]').value = `${pages.length + 1}`;
+
         showModal(pageModal);
     };
 
