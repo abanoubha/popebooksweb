@@ -18,3 +18,8 @@ Download the app on your Android phone from [Google Play](https://play.google.co
 - (re)compose them as technical components such as H1, P, UL, OL, IMG, .. then scroll vertically as it is more familiar for people nowadays.
 - convert each separate topic into (nested/interlinked) infographic(s) using Gemini Nano Banana Pro (AI/LLM)
 
+## commands
+
+```sh
+go run ./...
+```
