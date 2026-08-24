@@ -188,7 +188,7 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
 		// Check for bookId query param
 		bookID := r.URL.Query().Get("bookId")
 		query := "SELECT id, book_id, number, content FROM pages"
-		var args []interface{}
+		var args []any
 		if bookID != "" {
 			query += " WHERE book_id = ?"
 			args = append(args, bookID)
