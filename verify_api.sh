@@ -19,9 +19,9 @@ echo "Verifying Update..."
 GET_RES=$(curl -s "http://localhost:8000/api/pages?bookId=$BOOK_ID")
 echo "Get Response: $GET_RES"
 
-if [[ $GET_RES == *"Updated Content"* ]]; then
-    echo "SUCCESS: Content updated correctly."
+if [[ $GET_RES == *"Updated Content"* ]] && [[ $GET_RES == *"Page 1 Updated"* ]]; then
+    echo "SUCCESS: Content and name updated correctly."
 else
-    echo "FAILURE: Content not updated."
+    echo "FAILURE: Content or name not updated."
     exit 1
 fi

@@ -24,6 +24,7 @@ type Book struct {
 type Page struct {
 	ID      int    `json:"id"`
 	BookID  int    `json:"bookId"`
+	Name    string `json:"name"`
 	Number  int    `json:"number"`
 	Content string `json:"content"`
 }
@@ -68,6 +69,7 @@ func initDB() error {
 	CREATE TABLE IF NOT EXISTS pages (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		book_id INTEGER NOT NULL,
+		name TEXT,
 		number INTEGER,
 		content TEXT NOT NULL
 	);`
@@ -79,13 +81,20 @@ func initDB() error {
 		return err
 	}
 
-	// Check if 'name' column exists and try to drop it (migration)
-	// SQLite DROP COLUMN support added in 3.35.0 (2021).
-	// If we can't drop it easily without complex migration, we can just ignore it.
-	// But let's try a simple approach: if it exists, we just ignore it in queries, which is safer than complex table rebuilds for now.
-	// If the user demanded schema cleanup we'd rename table -> copy -> drop old -> rename new.
-	// For now, removing it from CREATE statement ensures new DBs are clean.
-	// Existing DBs will still have the column but we won't use it.
+	// Check if 'name' column exists in 'pages' table (migration for existing DB)
+	// We use a pragmatic approach: try to select 'name' from pages limit 1.
+	// If it fails, we add the column.
+	rows, err := db.Query("SELECT name FROM pages LIMIT 1")
+	if err != nil {
+		// Assume column missing
+		fmt.Println("Adding 'name' column to pages table...")
+		_, err = db.Exec("ALTER TABLE pages ADD COLUMN name TEXT DEFAULT ''")
+		if err != nil {
+			return fmt.Errorf("failed to add name column: %v", err)
+		}
+	} else {
+		rows.Close()
+	}
 
 	return nil
 }
@@ -187,7 +196,7 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
 	case GET:
 		// Check for bookId query param
 		bookID := r.URL.Query().Get("bookId")
-		query := "SELECT id, book_id, number, content FROM pages"
+		query := "SELECT id, book_id, name, number, content FROM pages"
 		var args []any
 		if bookID != "" {
 			query += " WHERE book_id = ?"
@@ -205,10 +214,12 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
 		pages := []Page{}
 		for rows.Next() {
 			var p Page
-			if err := rows.Scan(&p.ID, &p.BookID, &p.Number, &p.Content); err != nil {
+			var name sql.NullString
+			if err := rows.Scan(&p.ID, &p.BookID, &name, &p.Number, &p.Content); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			p.Name = name.String
 			pages = append(pages, p)
 		}
 		json.NewEncoder(w).Encode(pages)
@@ -219,7 +230,7 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		res, err := db.Exec("INSERT INTO pages (book_id, number, content) VALUES (?, ?, ?)", p.BookID, p.Number, p.Content)
+		res, err := db.Exec("INSERT INTO pages (book_id, name, number, content) VALUES (?, ?, ?, ?)", p.BookID, p.Name, p.Number, p.Content)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -256,13 +267,27 @@ func handlePageItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Update page
-		_, err := db.Exec("UPDATE pages SET number = ?, content = ? WHERE id = ?", p.Number, p.Content, idStr)
+		_, err := db.Exec("UPDATE pages SET name = ?, number = ?, content = ? WHERE id = ?", p.Name, p.Number, p.Content, idStr)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// Return updated page (or just OK)
 		p.ID, _ = strconv.Atoi(idStr)
+		json.NewEncoder(w).Encode(p)
+
+	case GET:
+		var p Page
+		var name sql.NullString
+		err := db.QueryRow("SELECT id, book_id, name, number, content FROM pages WHERE id = ?", idStr).Scan(&p.ID, &p.BookID, &name, &p.Number, &p.Content)
+		if err == sql.ErrNoRows {
+			http.Error(w, "Page not found", http.StatusNotFound)
+			return
+		} else if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		p.Name = name.String
 		json.NewEncoder(w).Encode(p)
 
 	default:
