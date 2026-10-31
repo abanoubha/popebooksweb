@@ -47,10 +47,27 @@ func main() {
 	http.Handle("/", fs)
 
 	// API Endpoints
-	http.HandleFunc("/api/books", handleBooks)
-	http.HandleFunc("/api/books/", handleBookItem) // For DELETE /api/books/{id}
-	http.HandleFunc("/api/pages", handlePages)
-	http.HandleFunc("/api/pages/", handlePageItem) // For DELETE /api/pages/{id}
+	http.HandleFunc("GET /api/books", handleGetBooks)
+	http.HandleFunc("POST /api/books", handlePostBook)
+
+	// DELETE /api/books/{id}
+	http.HandleFunc("POST /api/books/{id}", handleDeleteBookItem)
+
+	// PUT /api/books/{id}
+	http.HandleFunc("PUT /api/books/{id}", handlePutBookItem)
+
+	http.HandleFunc("GET /api/pages", handleGetPages)
+
+	http.HandleFunc("POST /api/pages", handlePostPages)
+
+	// GET /api/pages/
+	http.HandleFunc("GET /api/pages/", handleGetPageItem)
+
+	// DELETE /api/pages/{id}
+	http.HandleFunc("POST /api/pages/{id}", handleDeletePageItem)
+
+	// PUT /api/pages/{id}
+	http.HandleFunc("PUT /api/pages/", handlePutPageItem)
 
 	port := "8000"
 	fmt.Printf("Server starting on http://localhost:%s\n", port)
@@ -148,6 +165,95 @@ func handleBooks(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handlePostBook(w http.ResponseWriter, r *http.Request) {
+	var b Book
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := db.Exec("INSERT INTO books (name) VALUES (?)", b.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, _ := res.LastInsertId()
+	b.ID = int(id)
+	json.NewEncoder(w).Encode(b)
+}
+
+func handleGetBooks(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query("SELECT id, name FROM books")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	books := []Book{}
+	for rows.Next() {
+		var b Book
+		if err := rows.Scan(&b.ID, &b.Name); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		books = append(books, b)
+	}
+	json.NewEncoder(w).Encode(books)
+}
+
+func handleDeleteBookItem(w http.ResponseWriter, r *http.Request) {
+	// Expect path /api/books/{id}
+	idStr := filepath.Base(r.URL.Path)
+	if idStr == "" || idStr == "books" {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method != "DELETE" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+
+	// First delete pages associated with book
+	_, err := db.Exec("DELETE FROM pages WHERE book_id = ?", idStr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = db.Exec("DELETE FROM books WHERE id = ?", idStr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func handlePutBookItem(w http.ResponseWriter, r *http.Request) {
+	// Expect path /api/books/{id}
+	idStr := filepath.Base(r.URL.Path)
+	if idStr == "" || idStr == "books" {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method != "PUT" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+
+	var b Book
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	_, err := db.Exec("UPDATE books SET name = ? WHERE id = ?", b.Name, idStr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	b.ID, _ = strconv.Atoi(idStr)
+	json.NewEncoder(w).Encode(b)
+}
+
 func handleBookItem(w http.ResponseWriter, r *http.Request) {
 	// Expect path /api/books/{id}
 	idStr := filepath.Base(r.URL.Path)
@@ -189,6 +295,59 @@ func handleBookItem(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func handleGetPages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+	// Check for bookId query param
+	bookID := r.URL.Query().Get("bookId")
+	query := "SELECT id, book_id, name, number, content FROM pages"
+	var args []any
+	if bookID != "" {
+		query += " WHERE book_id = ?"
+		args = append(args, bookID)
+	}
+	query += " ORDER BY number ASC"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	pages := []Page{}
+	for rows.Next() {
+		var p Page
+		if err := rows.Scan(&p.ID, &p.BookID, &p.Name, &p.Number, &p.Content); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pages = append(pages, p)
+	}
+	json.NewEncoder(w).Encode(pages)
+}
+
+func handlePostPages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+
+	var p Page
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := db.Exec("INSERT INTO pages (book_id, name, number, content) VALUES (?, ?, ?, ?)", p.BookID, p.Name, p.Number, p.Content)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	id, _ := res.LastInsertId()
+	p.ID = int(id)
+	json.NewEncoder(w).Encode(p)
 }
 
 func handlePages(w http.ResponseWriter, r *http.Request) {
@@ -242,51 +401,71 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handlePageItem(w http.ResponseWriter, r *http.Request) {
+func handleDeletePageItem(w http.ResponseWriter, r *http.Request) {
 	idStr := filepath.Base(r.URL.Path)
 	if idStr == "" || idStr == "pages" {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
 
-	switch r.Method {
-	case DELETE:
-		_, err := db.Exec("DELETE FROM pages WHERE id = ?", idStr)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-
-	case "PUT":
-		var p Page
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		// Update page
-		_, err := db.Exec("UPDATE pages SET name = ?, number = ?, content = ? WHERE id = ?", p.Name, p.Number, p.Content, idStr)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		// Return updated page (or just OK)
-		p.ID, _ = strconv.Atoi(idStr)
-		json.NewEncoder(w).Encode(p)
-
-	case GET:
-		var p Page
-		err := db.QueryRow("SELECT id, book_id, name, number, content FROM pages WHERE id = ?", idStr).Scan(&p.ID, &p.BookID, &p.Name, &p.Number, &p.Content)
-		if err == sql.ErrNoRows {
-			http.Error(w, "Page not found", http.StatusNotFound)
-			return
-		} else if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(p)
-
-	default:
+	if r.Method != DELETE {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+
+	_, err := db.Exec("DELETE FROM pages WHERE id = ?", idStr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func handleGetPageItem(w http.ResponseWriter, r *http.Request) {
+	idStr := filepath.Base(r.URL.Path)
+	if idStr == "" || idStr == "pages" {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+
+	var p Page
+	err := db.QueryRow("SELECT id, book_id, name, number, content FROM pages WHERE id = ?", idStr).Scan(&p.ID, &p.BookID, &p.Name, &p.Number, &p.Content)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Page not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(p)
+}
+
+func handlePutPageItem(w http.ResponseWriter, r *http.Request) {
+	idStr := filepath.Base(r.URL.Path)
+	if idStr == "" || idStr == "pages" {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method != "PUT" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+
+	var p Page
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Update page
+	_, err := db.Exec("UPDATE pages SET name = ?, number = ?, content = ? WHERE id = ?", p.Name, p.Number, p.Content, idStr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Return updated page (or just OK)
+	p.ID, _ = strconv.Atoi(idStr)
+	json.NewEncoder(w).Encode(p)
 }
