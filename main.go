@@ -22,11 +22,11 @@ type Book struct {
 }
 
 type Page struct {
-	ID      int    `json:"id"`
-	BookID  int    `json:"bookId"`
-	Name    string `json:"name"`
-	Number  int    `json:"number"`
-	Content string `json:"content"`
+	ID      int            `json:"id"`
+	BookID  int            `json:"bookId"`
+	Name    sql.NullString `json:"name"`
+	Number  int            `json:"number"`
+	Content string         `json:"content"`
 }
 
 func main() {
@@ -214,12 +214,10 @@ func handlePages(w http.ResponseWriter, r *http.Request) {
 		pages := []Page{}
 		for rows.Next() {
 			var p Page
-			var name sql.NullString
-			if err := rows.Scan(&p.ID, &p.BookID, &name, &p.Number, &p.Content); err != nil {
+			if err := rows.Scan(&p.ID, &p.BookID, &p.Name, &p.Number, &p.Content); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			p.Name = name.String
 			pages = append(pages, p)
 		}
 		json.NewEncoder(w).Encode(pages)
@@ -278,8 +276,7 @@ func handlePageItem(w http.ResponseWriter, r *http.Request) {
 
 	case GET:
 		var p Page
-		var name sql.NullString
-		err := db.QueryRow("SELECT id, book_id, name, number, content FROM pages WHERE id = ?", idStr).Scan(&p.ID, &p.BookID, &name, &p.Number, &p.Content)
+		err := db.QueryRow("SELECT id, book_id, name, number, content FROM pages WHERE id = ?", idStr).Scan(&p.ID, &p.BookID, &p.Name, &p.Number, &p.Content)
 		if err == sql.ErrNoRows {
 			http.Error(w, "Page not found", http.StatusNotFound)
 			return
@@ -287,7 +284,6 @@ func handlePageItem(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		p.Name = name.String
 		json.NewEncoder(w).Encode(p)
 
 	default:
