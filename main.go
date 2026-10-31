@@ -116,54 +116,7 @@ func initDB() error {
 	return nil
 }
 
-// Handler Constants
-const (
-	GET    = "GET"
-	POST   = "POST"
-	DELETE = "DELETE"
-)
-
 // -- Handlers --
-
-func handleBooks(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case GET:
-		rows, err := db.Query("SELECT id, name FROM books")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-
-		books := []Book{}
-		for rows.Next() {
-			var b Book
-			if err := rows.Scan(&b.ID, &b.Name); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			books = append(books, b)
-		}
-		json.NewEncoder(w).Encode(books)
-
-	case POST:
-		var b Book
-		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		res, err := db.Exec("INSERT INTO books (name) VALUES (?)", b.Name)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		id, _ := res.LastInsertId()
-		b.ID = int(id)
-		json.NewEncoder(w).Encode(b)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
 
 func handlePostBook(w http.ResponseWriter, r *http.Request) {
 	var b Book
@@ -254,49 +207,6 @@ func handlePutBookItem(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(b)
 }
 
-func handleBookItem(w http.ResponseWriter, r *http.Request) {
-	// Expect path /api/books/{id}
-	idStr := filepath.Base(r.URL.Path)
-	if idStr == "" || idStr == "books" {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
-		return
-	}
-
-	switch r.Method {
-	case DELETE:
-		// First delete pages associated with book
-		_, err := db.Exec("DELETE FROM pages WHERE book_id = ?", idStr)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		_, err = db.Exec("DELETE FROM books WHERE id = ?", idStr)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-
-	case "PUT":
-		var b Book
-		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		_, err := db.Exec("UPDATE books SET name = ? WHERE id = ?", b.Name, idStr)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		b.ID, _ = strconv.Atoi(idStr)
-		json.NewEncoder(w).Encode(b)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 func handleGetPages(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -350,57 +260,6 @@ func handlePostPages(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(p)
 }
 
-func handlePages(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case GET:
-		// Check for bookId query param
-		bookID := r.URL.Query().Get("bookId")
-		query := "SELECT id, book_id, name, number, content FROM pages"
-		var args []any
-		if bookID != "" {
-			query += " WHERE book_id = ?"
-			args = append(args, bookID)
-		}
-		query += " ORDER BY number ASC"
-
-		rows, err := db.Query(query, args...)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-
-		pages := []Page{}
-		for rows.Next() {
-			var p Page
-			if err := rows.Scan(&p.ID, &p.BookID, &p.Name, &p.Number, &p.Content); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			pages = append(pages, p)
-		}
-		json.NewEncoder(w).Encode(pages)
-
-	case POST:
-		var p Page
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		res, err := db.Exec("INSERT INTO pages (book_id, name, number, content) VALUES (?, ?, ?, ?)", p.BookID, p.Name, p.Number, p.Content)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		id, _ := res.LastInsertId()
-		p.ID = int(id)
-		json.NewEncoder(w).Encode(p)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 func handleDeletePageItem(w http.ResponseWriter, r *http.Request) {
 	idStr := filepath.Base(r.URL.Path)
 	if idStr == "" || idStr == "pages" {
@@ -408,7 +267,7 @@ func handleDeletePageItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method != DELETE {
+	if r.Method != "DELETE" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 
