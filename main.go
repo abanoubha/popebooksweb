@@ -2,12 +2,12 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strconv"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -15,18 +15,33 @@ import (
 // DB global connection
 var db *sql.DB
 
+// Parsed templates
+var templates *template.Template
+
 // Models
 type Book struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID   int
+	Name string
 }
 
 type Page struct {
-	ID      int            `json:"id"`
-	BookID  int            `json:"bookId"`
-	Name    sql.NullString `json:"name"`
-	Number  int            `json:"number"`
-	Content string         `json:"content"`
+	ID      int
+	BookID  int
+	Name    string
+	Number  int
+	Content string
+}
+
+// Template data structures
+type IndexData struct {
+	Books       []Book
+	CurrentBook *Book
+	Pages       []Page
+	Flash       string
+	FlashType   string // "success" or "error"
+	EditBookID  int
+	EditPageID  int
+	EditPage    *Page
 }
 
 func main() {
@@ -42,32 +57,38 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Parse templates
+	templates = template.Must(template.New("").Funcs(template.FuncMap{
+		"truncate": func(s string, n int) string {
+			if len(s) <= n {
+				return s
+			}
+			// Truncate at rune boundary for Arabic text
+			runes := []rune(s)
+			if len(runes) <= n {
+				return s
+			}
+			return string(runes[:n]) + "…"
+		},
+	}).ParseGlob("templates/*.html"))
+
 	// Serve static files
 	fs := http.FileServer(http.Dir("./static"))
-	http.Handle("/", fs)
+	http.Handle("GET /static/", http.StripPrefix("/static/", fs))
 
-	// API Endpoints
-	http.HandleFunc("GET /api/books", handleGetBooks)
-	http.HandleFunc("POST /api/books", handlePostBook)
+	// Page routes
+	http.HandleFunc("GET /{$}", handleIndex)
+	http.HandleFunc("GET /books/{id}", handleBookView)
+	http.HandleFunc("GET /books/{id}/edit", handleBookEdit)
+	http.HandleFunc("GET /books/{bookID}/pages/{pageID}/edit", handlePageEdit)
 
-	// DELETE /api/books/{id}
-	http.HandleFunc("POST /api/books/{id}", handleDeleteBookItem)
-
-	// PUT /api/books/{id}
-	http.HandleFunc("PUT /api/books/{id}", handlePutBookItem)
-
-	http.HandleFunc("GET /api/pages", handleGetPages)
-
-	http.HandleFunc("POST /api/pages", handlePostPages)
-
-	// GET /api/pages/
-	http.HandleFunc("GET /api/pages/", handleGetPageItem)
-
-	// DELETE /api/pages/{id}
-	http.HandleFunc("POST /api/pages/{id}", handleDeletePageItem)
-
-	// PUT /api/pages/{id}
-	http.HandleFunc("PUT /api/pages/", handlePutPageItem)
+	// Form actions
+	http.HandleFunc("POST /books", handleCreateBook)
+	http.HandleFunc("POST /books/{id}/update", handleUpdateBook)
+	http.HandleFunc("POST /books/{id}/delete", handleDeleteBook)
+	http.HandleFunc("POST /books/{id}/pages", handleCreatePage)
+	http.HandleFunc("POST /books/{bookID}/pages/{pageID}/update", handleUpdatePage)
+	http.HandleFunc("POST /books/{bookID}/pages/{pageID}/delete", handleDeletePage)
 
 	port := "8000"
 	fmt.Printf("Server starting on http://localhost:%s\n", port)
@@ -99,8 +120,6 @@ func initDB() error {
 	}
 
 	// Check if 'name' column exists in 'pages' table (migration for existing DB)
-	// We use a pragmatic approach: try to select 'name' from pages limit 1.
-	// If it fails, we add the column.
 	rows, err := db.Query("SELECT name FROM pages LIMIT 1")
 	if err != nil {
 		// Assume column missing
@@ -116,215 +135,376 @@ func initDB() error {
 	return nil
 }
 
-// -- Handlers --
+// --- Helper functions ---
 
-func handlePostBook(w http.ResponseWriter, r *http.Request) {
-	var b Book
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	res, err := db.Exec("INSERT INTO books (name) VALUES (?)", b.Name)
+func getAllBooks() ([]Book, error) {
+	rows, err := db.Query("SELECT id, name FROM books ORDER BY id ASC")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	id, _ := res.LastInsertId()
-	b.ID = int(id)
-	json.NewEncoder(w).Encode(b)
-}
-
-func handleGetBooks(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, name FROM books")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 
-	books := []Book{}
+	var books []Book
 	for rows.Next() {
 		var b Book
 		if err := rows.Scan(&b.ID, &b.Name); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return nil, err
 		}
 		books = append(books, b)
 	}
-	json.NewEncoder(w).Encode(books)
+	return books, nil
 }
 
-func handleDeleteBookItem(w http.ResponseWriter, r *http.Request) {
-	// Expect path /api/books/{id}
-	idStr := filepath.Base(r.URL.Path)
-	if idStr == "" || idStr == "books" {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
-		return
-	}
-
-	if r.Method != "DELETE" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-
-	// First delete pages associated with book
-	_, err := db.Exec("DELETE FROM pages WHERE book_id = ?", idStr)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	_, err = db.Exec("DELETE FROM books WHERE id = ?", idStr)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
-func handlePutBookItem(w http.ResponseWriter, r *http.Request) {
-	// Expect path /api/books/{id}
-	idStr := filepath.Base(r.URL.Path)
-	if idStr == "" || idStr == "books" {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
-		return
-	}
-
-	if r.Method != "PUT" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-
+func getBook(id int) (*Book, error) {
 	var b Book
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	_, err := db.Exec("UPDATE books SET name = ? WHERE id = ?", b.Name, idStr)
+	err := db.QueryRow("SELECT id, name FROM books WHERE id = ?", id).Scan(&b.ID, &b.Name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
-	b.ID, _ = strconv.Atoi(idStr)
-	json.NewEncoder(w).Encode(b)
+	return &b, nil
 }
 
-func handleGetPages(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-	// Check for bookId query param
-	bookID := r.URL.Query().Get("bookId")
-	query := "SELECT id, book_id, name, number, content FROM pages"
-	var args []any
-	if bookID != "" {
-		query += " WHERE book_id = ?"
-		args = append(args, bookID)
-	}
-	query += " ORDER BY number ASC"
-
-	rows, err := db.Query(query, args...)
+func getPages(bookID int) ([]Page, error) {
+	rows, err := db.Query("SELECT id, book_id, COALESCE(name, ''), number, content FROM pages WHERE book_id = ? ORDER BY number ASC", bookID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 
-	pages := []Page{}
+	var pages []Page
 	for rows.Next() {
 		var p Page
 		if err := rows.Scan(&p.ID, &p.BookID, &p.Name, &p.Number, &p.Content); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return nil, err
 		}
 		pages = append(pages, p)
 	}
-	json.NewEncoder(w).Encode(pages)
+	return pages, nil
 }
 
-func handlePostPages(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-
+func getPage(id int) (*Page, error) {
 	var p Page
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	err := db.QueryRow("SELECT id, book_id, COALESCE(name, ''), number, content FROM pages WHERE id = ?", id).Scan(&p.ID, &p.BookID, &p.Name, &p.Number, &p.Content)
+	if err != nil {
+		return nil, err
 	}
-	res, err := db.Exec("INSERT INTO pages (book_id, name, number, content) VALUES (?, ?, ?, ?)", p.BookID, p.Name, p.Number, p.Content)
+	return &p, nil
+}
+
+func filterBooks(books []Book, query string) []Book {
+	if query == "" {
+		return books
+	}
+	query = strings.ToLower(query)
+	var filtered []Book
+	for _, b := range books {
+		if strings.Contains(strings.ToLower(b.Name), query) {
+			filtered = append(filtered, b)
+		}
+	}
+	return filtered
+}
+
+// --- Handlers ---
+
+func handleIndex(w http.ResponseWriter, r *http.Request) {
+	books, err := getAllBooks()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	id, _ := res.LastInsertId()
-	p.ID = int(id)
-	json.NewEncoder(w).Encode(p)
+
+	// Filter books if search query present
+	query := r.URL.Query().Get("q")
+	displayBooks := filterBooks(books, query)
+
+	data := IndexData{
+		Books:     displayBooks,
+		Flash:     r.URL.Query().Get("flash"),
+		FlashType: r.URL.Query().Get("flash_type"),
+	}
+
+	if err := templates.ExecuteTemplate(w, "layout.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
-func handleDeletePageItem(w http.ResponseWriter, r *http.Request) {
-	idStr := filepath.Base(r.URL.Path)
-	if idStr == "" || idStr == "pages" {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
+func handleBookView(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid book ID", http.StatusBadRequest)
 		return
 	}
 
-	if r.Method != "DELETE" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-
-	_, err := db.Exec("DELETE FROM pages WHERE id = ?", idStr)
+	books, err := getAllBooks()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-}
 
-func handleGetPageItem(w http.ResponseWriter, r *http.Request) {
-	idStr := filepath.Base(r.URL.Path)
-	if idStr == "" || idStr == "pages" {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
-		return
-	}
-
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-
-	var p Page
-	err := db.QueryRow("SELECT id, book_id, name, number, content FROM pages WHERE id = ?", idStr).Scan(&p.ID, &p.BookID, &p.Name, &p.Number, &p.Content)
+	book, err := getBook(id)
 	if err == sql.ErrNoRows {
-		http.Error(w, "Page not found", http.StatusNotFound)
+		http.Redirect(w, r, "/?flash=Book+not+found&flash_type=error", http.StatusSeeOther)
 		return
 	} else if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(p)
-}
 
-func handlePutPageItem(w http.ResponseWriter, r *http.Request) {
-	idStr := filepath.Base(r.URL.Path)
-	if idStr == "" || idStr == "pages" {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
-		return
-	}
-
-	if r.Method != "PUT" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-
-	var p Page
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	// Update page
-	_, err := db.Exec("UPDATE pages SET name = ?, number = ?, content = ? WHERE id = ?", p.Name, p.Number, p.Content, idStr)
+	pages, err := getPages(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Return updated page (or just OK)
-	p.ID, _ = strconv.Atoi(idStr)
-	json.NewEncoder(w).Encode(p)
+
+	// Filter books if search query present
+	query := r.URL.Query().Get("q")
+	displayBooks := filterBooks(books, query)
+
+	data := IndexData{
+		Books:       displayBooks,
+		CurrentBook: book,
+		Pages:       pages,
+		Flash:       r.URL.Query().Get("flash"),
+		FlashType:   r.URL.Query().Get("flash_type"),
+	}
+
+	if err := templates.ExecuteTemplate(w, "layout.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func handleBookEdit(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		return
+	}
+
+	books, err := getAllBooks()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	book, err := getBook(id)
+	if err == sql.ErrNoRows {
+		http.Redirect(w, r, "/?flash=Book+not+found&flash_type=error", http.StatusSeeOther)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pages, err := getPages(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data := IndexData{
+		Books:       books,
+		CurrentBook: book,
+		Pages:       pages,
+		EditBookID:  id,
+	}
+
+	if err := templates.ExecuteTemplate(w, "layout.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func handlePageEdit(w http.ResponseWriter, r *http.Request) {
+	bookIDStr := r.PathValue("bookID")
+	bookID, err := strconv.Atoi(bookIDStr)
+	if err != nil {
+		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		return
+	}
+
+	pageIDStr := r.PathValue("pageID")
+	pageID, err := strconv.Atoi(pageIDStr)
+	if err != nil {
+		http.Error(w, "Invalid page ID", http.StatusBadRequest)
+		return
+	}
+
+	books, err := getAllBooks()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	book, err := getBook(bookID)
+	if err == sql.ErrNoRows {
+		http.Redirect(w, r, "/?flash=Book+not+found&flash_type=error", http.StatusSeeOther)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pages, err := getPages(bookID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	page, err := getPage(pageID)
+	if err == sql.ErrNoRows {
+		http.Redirect(w, r, fmt.Sprintf("/books/%d?flash=Page+not+found&flash_type=error", bookID), http.StatusSeeOther)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data := IndexData{
+		Books:       books,
+		CurrentBook: book,
+		Pages:       pages,
+		EditPageID:  pageID,
+		EditPage:    page,
+	}
+
+	if err := templates.ExecuteTemplate(w, "layout.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func handleCreateBook(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Redirect(w, r, "/?flash=Book+name+is+required&flash_type=error", http.StatusSeeOther)
+		return
+	}
+
+	res, err := db.Exec("INSERT INTO books (name) VALUES (?)", name)
+	if err != nil {
+		http.Redirect(w, r, "/?flash=Failed+to+create+book&flash_type=error", http.StatusSeeOther)
+		return
+	}
+
+	id, _ := res.LastInsertId()
+	http.Redirect(w, r, fmt.Sprintf("/books/%d?flash=Book+created&flash_type=success", id), http.StatusSeeOther)
+}
+
+func handleUpdateBook(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Redirect(w, r, fmt.Sprintf("/books/%d/edit?flash=Book+name+is+required&flash_type=error", id), http.StatusSeeOther)
+		return
+	}
+
+	_, err = db.Exec("UPDATE books SET name = ? WHERE id = ?", name, id)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/books/%d?flash=Failed+to+update+book&flash_type=error", id), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/books/%d?flash=Book+updated&flash_type=success", id), http.StatusSeeOther)
+}
+
+func handleDeleteBook(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+
+	// First delete pages associated with book
+	_, err := db.Exec("DELETE FROM pages WHERE book_id = ?", idStr)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/books/%s?flash=Failed+to+delete+book&flash_type=error", idStr), http.StatusSeeOther)
+		return
+	}
+
+	_, err = db.Exec("DELETE FROM books WHERE id = ?", idStr)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/books/%s?flash=Failed+to+delete+book&flash_type=error", idStr), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/?flash=Book+deleted&flash_type=success", http.StatusSeeOther)
+}
+
+func handleCreatePage(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	bookID, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	numberStr := r.FormValue("number")
+	content := strings.TrimSpace(r.FormValue("content"))
+
+	if content == "" {
+		http.Redirect(w, r, fmt.Sprintf("/books/%d?flash=Page+content+is+required&flash_type=error", bookID), http.StatusSeeOther)
+		return
+	}
+
+	number, _ := strconv.Atoi(numberStr)
+
+	_, err = db.Exec("INSERT INTO pages (book_id, name, number, content) VALUES (?, ?, ?, ?)", bookID, name, number, content)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/books/%d?flash=Failed+to+create+page&flash_type=error", bookID), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/books/%d?flash=Page+added&flash_type=success", bookID), http.StatusSeeOther)
+}
+
+func handleUpdatePage(w http.ResponseWriter, r *http.Request) {
+	bookIDStr := r.PathValue("bookID")
+	bookID, err := strconv.Atoi(bookIDStr)
+	if err != nil {
+		http.Error(w, "Invalid book ID", http.StatusBadRequest)
+		return
+	}
+
+	pageIDStr := r.PathValue("pageID")
+	pageID, err := strconv.Atoi(pageIDStr)
+	if err != nil {
+		http.Error(w, "Invalid page ID", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	numberStr := r.FormValue("number")
+	content := strings.TrimSpace(r.FormValue("content"))
+
+	if content == "" {
+		http.Redirect(w, r, fmt.Sprintf("/books/%d/pages/%d/edit?flash=Page+content+is+required&flash_type=error", bookID, pageID), http.StatusSeeOther)
+		return
+	}
+
+	number, _ := strconv.Atoi(numberStr)
+
+	_, err = db.Exec("UPDATE pages SET name = ?, number = ?, content = ? WHERE id = ?", name, number, content, pageID)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/books/%d?flash=Failed+to+update+page&flash_type=error", bookID), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/books/%d?flash=Page+updated&flash_type=success", bookID), http.StatusSeeOther)
+}
+
+func handleDeletePage(w http.ResponseWriter, r *http.Request) {
+	bookIDStr := r.PathValue("bookID")
+	pageIDStr := r.PathValue("pageID")
+
+	_, err := db.Exec("DELETE FROM pages WHERE id = ?", pageIDStr)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/books/%s?flash=Failed+to+delete+page&flash_type=error", bookIDStr), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/books/%s?flash=Page+deleted&flash_type=success", bookIDStr), http.StatusSeeOther)
 }

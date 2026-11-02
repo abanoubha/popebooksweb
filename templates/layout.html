@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ar" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PopeBooks{{if .CurrentBook}} — {{.CurrentBook.Name}}{{end}}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    {{if .Flash}}
+    <div class="flash flash-{{.FlashType}}">
+        {{.Flash}}
+    </div>
+    {{end}}
+
+    <div class="app-container">
+        {{template "sidebar.html" .}}
+
+        <main class="main-content">
+            {{if .CurrentBook}}
+                {{template "book_view.html" .}}
+            {{else}}
+                {{template "empty_state.html" .}}
+            {{end}}
+        </main>
+    </div>
+
+    <script>
+        // Auto-hide flash messages
+        (function() {
+            var flash = document.querySelector('.flash');
+            if (flash) {
+                setTimeout(function() {
+                    flash.style.opacity = '0';
+                    setTimeout(function() { flash.remove(); }, 300);
+                }, 3000);
+            }
+        })();
+    </script>
+</body>
+
+</html>

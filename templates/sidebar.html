@@ -1,0 +1,40 @@
+<aside class="sidebar">
+    <div class="sidebar-header">
+        <a href="/" class="logo">
+            <span class="logo-icon">📚</span>
+            <span>PopeBooks</span>
+        </a>
+        <a href="/" class="btn btn-icon btn-primary" title="Home">🏠</a>
+    </div>
+
+    <!-- Add Book Form -->
+    <details class="add-book-section">
+        <summary class="btn btn-primary btn-block">＋ Add Book</summary>
+        <form action="/books" method="POST" class="form-inline">
+            <div class="form-group">
+                <input type="text" name="name" required placeholder="Book name..." dir="auto">
+            </div>
+            <button type="submit" class="btn btn-primary btn-small">Create</button>
+        </form>
+    </details>
+
+    <!-- Search -->
+    <form action="{{if .CurrentBook}}/books/{{.CurrentBook.ID}}{{else}}/{{end}}" method="GET" class="search-bar">
+        <input type="text" name="q" placeholder="Search books..." dir="auto">
+        <button type="submit" class="btn btn-small btn-secondary">Search</button>
+    </form>
+
+    <!-- Book List -->
+    <nav class="book-list">
+        {{if .Books}}
+            {{range .Books}}
+            <a href="/books/{{.ID}}" class="book-item{{if $.CurrentBook}}{{if eq $.CurrentBook.ID .ID}} active{{end}}{{end}}">
+                <span dir="auto">{{.Name}}</span>
+                <span class="arrow">›</span>
+            </a>
+            {{end}}
+        {{else}}
+            <p class="empty-list">No books found.</p>
+        {{end}}
+    </nav>
+</aside>

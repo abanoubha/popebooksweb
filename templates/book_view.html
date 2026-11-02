@@ -1,0 +1,104 @@
+<div class="book-view">
+    <!-- Book Header -->
+    <header class="book-header">
+        <div class="book-info">
+            {{if eq .EditBookID .CurrentBook.ID}}
+            <!-- Edit Book Name Form -->
+            <form action="/books/{{.CurrentBook.ID}}/update" method="POST" class="edit-form">
+                <div class="form-group">
+                    <input type="text" name="name" value="{{.CurrentBook.Name}}" required dir="auto" autofocus>
+                </div>
+                <div class="form-actions-inline">
+                    <button type="submit" class="btn btn-primary btn-small">Save</button>
+                    <a href="/books/{{.CurrentBook.ID}}" class="btn btn-secondary btn-small">Cancel</a>
+                </div>
+            </form>
+            {{else}}
+            <h1 dir="auto">{{.CurrentBook.Name}}</h1>
+            <span class="badge">{{len .Pages}} Pages</span>
+            {{end}}
+        </div>
+        {{if not (eq .EditBookID .CurrentBook.ID)}}
+        <div class="actions">
+            <a href="/books/{{.CurrentBook.ID}}/edit" class="btn btn-secondary">✏️ Edit</a>
+            <form action="/books/{{.CurrentBook.ID}}/delete" method="POST" class="inline-form" onsubmit="return confirm('Delete this book and all its pages?');">
+                <button type="submit" class="btn btn-danger">🗑️ Delete</button>
+            </form>
+        </div>
+        {{end}}
+    </header>
+
+    <!-- Add Page Form -->
+    <details class="add-page-section">
+        <summary class="btn btn-primary">＋ Add Page</summary>
+        <form action="/books/{{.CurrentBook.ID}}/pages" method="POST" class="add-page-form">
+            <div class="form-row">
+                <div class="form-group form-group-small">
+                    <label>Page Number</label>
+                    <input type="number" name="number" value="{{len .Pages | printf "%d"}}" placeholder="1">
+                </div>
+                <div class="form-group form-group-grow">
+                    <label>Page Name/Title</label>
+                    <input type="text" name="name" placeholder="Ex: Chapter 1" dir="auto">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Content</label>
+                <textarea name="content" required placeholder="Write your content here..." rows="5" dir="auto"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Add Page</button>
+            </div>
+        </form>
+    </details>
+
+    <!-- Pages Grid -->
+    {{if .Pages}}
+    <div class="pages-grid">
+        {{range .Pages}}
+        <div class="page-card" id="page-{{.ID}}">
+            {{if and $.EditPage (eq $.EditPageID .ID)}}
+            <!-- Edit Page Form -->
+            <form action="/books/{{.BookID}}/pages/{{.ID}}/update" method="POST" class="edit-page-form">
+                <div class="form-group">
+                    <label>Page Number</label>
+                    <input type="number" name="number" value="{{.Number}}">
+                </div>
+                <div class="form-group">
+                    <label>Page Name/Title</label>
+                    <input type="text" name="name" value="{{.Name}}" dir="auto">
+                </div>
+                <div class="form-group">
+                    <label>Content</label>
+                    <textarea name="content" required rows="8" dir="auto">{{.Content}}</textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary btn-small">Save</button>
+                    <a href="/books/{{.BookID}}" class="btn btn-secondary btn-small">Cancel</a>
+                </div>
+            </form>
+            {{else}}
+            <!-- View Page -->
+            <div class="page-header">
+                <span class="page-number">PAGE {{.Number}}</span>
+            </div>
+            {{if .Name}}
+            <h3 class="page-title" dir="auto">{{.Name}}</h3>
+            {{end}}
+            <p class="page-content" dir="auto">{{.Content}}</p>
+            <div class="page-actions">
+                <a href="/books/{{.BookID}}/pages/{{.ID}}/edit#page-{{.ID}}" class="btn btn-small btn-secondary">✏️ Edit</a>
+                <form action="/books/{{.BookID}}/pages/{{.ID}}/delete" method="POST" class="inline-form" onsubmit="return confirm('Delete this page?');">
+                    <button type="submit" class="btn btn-small btn-danger">🗑️ Delete</button>
+                </form>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="empty-pages">
+        <p>No pages yet. Add the first page to get started.</p>
+    </div>
+    {{end}}
+</div>
