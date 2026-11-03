@@ -6,7 +6,7 @@
             <!-- Edit Book Name Form -->
             <form action="/books/{{.CurrentBook.ID}}/update" method="POST" class="edit-form">
                 <div class="form-group">
-                    <input type="text" name="name" value="{{.CurrentBook.Name}}" required dir="auto" autofocus>
+                    <input type="text" name="name" value="{{.CurrentBook.Name}}" required dir="auto" autofocus />
                 </div>
                 <div class="form-actions-inline">
                     <button type="submit" class="btn btn-primary btn-small">Save</button>
@@ -21,7 +21,12 @@
         {{if not (eq .EditBookID .CurrentBook.ID)}}
         <div class="actions">
             <a href="/books/{{.CurrentBook.ID}}/edit" class="btn btn-secondary">✏️ Edit</a>
-            <form action="/books/{{.CurrentBook.ID}}/delete" method="POST" class="inline-form" onsubmit="return confirm('Delete this book and all its pages?');">
+            <form
+                action="/books/{{.CurrentBook.ID}}/delete"
+                method="POST"
+                class="inline-form"
+                onsubmit="return confirm('Delete this book and all its pages?');"
+            >
                 <button type="submit" class="btn btn-danger">🗑️ Delete</button>
             </form>
         </div>
@@ -35,16 +40,22 @@
             <div class="form-row">
                 <div class="form-group form-group-small">
                     <label>Page Number</label>
-                    <input type="number" name="number" value="{{len .Pages | printf "%d"}}" placeholder="1">
+                    <input type="number" name="number" value="{{len .Pages | inc }}" placeholder="1" />
                 </div>
                 <div class="form-group form-group-grow">
                     <label>Page Name/Title</label>
-                    <input type="text" name="name" placeholder="Ex: Chapter 1" dir="auto">
+                    <input type="text" name="name" placeholder="Ex: Chapter 1" dir="auto" />
                 </div>
             </div>
             <div class="form-group">
                 <label>Content</label>
-                <textarea name="content" required placeholder="Write your content here..." rows="5" dir="auto"></textarea>
+                <textarea
+                    name="content"
+                    required
+                    placeholder="Write your content here..."
+                    rows="5"
+                    dir="auto"
+                ></textarea>
             </div>
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary">Add Page</button>
@@ -62,11 +73,11 @@
             <form action="/books/{{.BookID}}/pages/{{.ID}}/update" method="POST" class="edit-page-form">
                 <div class="form-group">
                     <label>Page Number</label>
-                    <input type="number" name="number" value="{{.Number}}">
+                    <input type="number" name="number" value="{{.Number}}" />
                 </div>
                 <div class="form-group">
                     <label>Page Name/Title</label>
-                    <input type="text" name="name" value="{{.Name}}" dir="auto">
+                    <input type="text" name="name" value="{{.Name}}" dir="auto" />
                 </div>
                 <div class="form-group">
                     <label>Content</label>
@@ -87,8 +98,15 @@
             {{end}}
             <p class="page-content" dir="auto">{{.Content}}</p>
             <div class="page-actions">
-                <a href="/books/{{.BookID}}/pages/{{.ID}}/edit#page-{{.ID}}" class="btn btn-small btn-secondary">✏️ Edit</a>
-                <form action="/books/{{.BookID}}/pages/{{.ID}}/delete" method="POST" class="inline-form" onsubmit="return confirm('Delete this page?');">
+                <a href="/books/{{.BookID}}/pages/{{.ID}}/edit#page-{{.ID}}" class="btn btn-small btn-secondary"
+                    >✏️ Edit</a
+                >
+                <form
+                    action="/books/{{.BookID}}/pages/{{.ID}}/delete"
+                    method="POST"
+                    class="inline-form"
+                    onsubmit="return confirm('Delete this page?');"
+                >
                     <button type="submit" class="btn btn-small btn-danger">🗑️ Delete</button>
                 </form>
             </div>

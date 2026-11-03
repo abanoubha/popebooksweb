@@ -70,6 +70,9 @@ func main() {
 			}
 			return string(runes[:n]) + "…"
 		},
+		"inc": func(v int) int {
+			return v + 1
+		},
 	}).ParseGlob("templates/*.html"))
 
 	// Serve static files
